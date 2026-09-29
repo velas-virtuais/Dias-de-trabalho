@@ -1,0 +1,250 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="format-detection" content="telephone=no">
+<title>Minha Escala</title>
+<style>
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;padding:0;background:#f2f4f7;color:#17202a;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Arial,sans-serif}
+body{padding:max(14px,env(safe-area-inset-top)) 14px max(20px,env(safe-area-inset-bottom))}
+main{max-width:600px;margin:auto}
+h1{text-align:center;font-size:25px;margin:8px 0 4px}
+.sub{text-align:center;color:#667085;margin-bottom:16px}
+.box{background:#fff;border-radius:16px;padding:16px;margin:12px 0;box-shadow:0 2px 10px rgba(0,0,0,.07)}
+.status{text-align:center;font-size:24px;font-weight:800;padding:12px;border-radius:12px}
+.trabalho{color:#087f3f;background:#dcfce7}
+.folga{color:#475569;background:#e2e8f0}
+label{display:block;font-weight:700;margin:12px 0 6px}
+input,select,button{font-family:inherit;font-size:17px;min-height:50px;border-radius:12px}
+input,select{width:100%;padding:10px;border:1px solid #cbd5e1;background:#fff;color:#111}
+button{width:100%;border:0;padding:12px;font-weight:800;color:#fff;background:#2563eb;margin-top:10px;touch-action:manipulation}
+button.alt{background:#475569}
+button.red{background:#dc2626}
+.grid{display:grid;grid-template-columns:repeat(7,1fr);gap:4px}
+.week{text-align:center;font-size:12px;font-weight:800;color:#667085;padding:5px 0}
+.day{min-height:61px;border:1px solid #d9dee5;border-radius:9px;background:#fff;padding:5px;text-align:center;touch-action:manipulation}
+.day b{display:block;font-size:15px}
+.day small{display:block;margin-top:7px;font-size:9px;font-weight:800}
+.day.w{background:#dcfce7;color:#087f3f}
+.day.f{background:#e2e8f0;color:#475569}
+.day.hoje{outline:3px solid #2563eb;outline-offset:-2px}
+.day.vazio{border:0;background:transparent}
+.month{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:10px}
+.month button{width:52px;min-height:44px;margin:0;padding:5px;font-size:22px}
+.month strong{text-transform:capitalize;font-size:18px}
+.stats{display:grid;grid-template-columns:1fr 1fr;gap:8px;text-align:center}
+.stat{background:#f8fafc;border-radius:10px;padding:10px}
+.stat b{display:block;font-size:21px}
+.info{font-size:14px;color:#667085;line-height:1.4}
+@media(min-width:601px){body{padding-top:25px}.actions{display:grid;grid-template-columns:1fr 1fr;gap:8px}.actions button{margin-top:8px}}
+</style>
+</head>
+<body>
+<main>
+<h1>📅 Minha Escala</h1>
+<div class="sub">Dia sim, dia não</div>
+
+<div class="box">
+  <div id="hoje" class="status">Carregando...</div>
+  <p id="infoHoje" class="info" style="text-align:center;margin-bottom:0"></p>
+</div>
+
+<div class="box">
+  <label for="data">Data de referência</label>
+  <input id="data" type="date">
+
+  <label for="tipo">Essa data é:</label>
+  <select id="tipo">
+    <option value="T">🟢 Trabalho</option>
+    <option value="F">⚪ Folga</option>
+  </select>
+
+  <div class="actions">
+    <button id="aplicar" type="button">Aplicar escala</button>
+    <button id="trocar" type="button" class="alt">🔄 Trocar escala a partir desta data</button>
+    <button id="limpar" type="button" class="red">Restaurar</button>
+  </div>
+</div>
+
+<div class="box">
+  <div class="month">
+    <button id="anterior" type="button" class="alt">‹</button>
+    <strong id="mes"></strong>
+    <button id="proximo" type="button" class="alt">›</button>
+  </div>
+  <div class="grid" id="diasSemana"></div>
+  <div class="grid" id="calendario"></div>
+  <p class="info">Toque em qualquer dia para selecioná-lo como data da troca.</p>
+</div>
+
+<div class="box">
+  <div class="stats">
+    <div class="stat"><b id="nt">0</b>Trabalho</div>
+    <div class="stat"><b id="nf">0</b>Folga</div>
+  </div>
+</div>
+</main>
+
+<script>
+(function(){
+"use strict";
+
+var KEY="MINHA_ESCALA_IPHONE_2";
+var hoje=new Date();
+var pad=function(n){return n<10?"0"+n:""+n};
+var iso=function(d){return d.getFullYear()+"-"+pad(d.getMonth()+1)+"-"+pad(d.getDate())};
+var parse=function(s){var p=s.split("-");return new Date(+p[0],+p[1]-1,+p[2])};
+var diff=function(a,b){
+  return Math.round((Date.UTC(a.getFullYear(),a.getMonth(),a.getDate())-
+  Date.UTC(b.getFullYear(),b.getMonth(),b.getDate()))/86400000);
+};
+
+var dados;
+try{dados=JSON.parse(localStorage.getItem(KEY)||"null")}catch(e){dados=null}
+if(!dados){
+  dados={inicio:iso(hoje),tipo:"T",troca:"",ano:hoje.getFullYear(),mes:hoje.getMonth()};
+}
+
+function salvar(){
+  try{localStorage.setItem(KEY,JSON.stringify(dados))}catch(e){}
+}
+
+function base(d){
+  var x=Math.abs(diff(d,parse(dados.inicio)))%2;
+  return x===0?dados.tipo:(dados.tipo==="T"?"F":"T");
+}
+
+function status(d){
+  var s=base(d);
+  if(dados.troca && d>=parse(dados.troca)) s=s==="T"?"F":"T";
+  return s;
+}
+
+function mostrarHoje(){
+  var s=status(hoje);
+  var el=document.getElementById("hoje");
+  el.className="status "+(s==="T"?"trabalho":"folga");
+  el.textContent=s==="T"?"🟢 DIA DE TRABALHO":"⚪ DIA DE FOLGA";
+  document.getElementById("infoHoje").textContent=
+    "Referência: "+parse(dados.inicio).toLocaleDateString("pt-BR")+
+    " = "+(dados.tipo==="T"?"Trabalho":"Folga")+
+    (dados.troca?" • troca a partir de "+parse(dados.troca).toLocaleDateString("pt-BR"):"");
+}
+
+function calendario(){
+  var nomes=["Dom","Seg","Ter","Qua","Qui","Sex","Sáb"];
+  var ws=document.getElementById("diasSemana");
+  ws.innerHTML="";
+  for(var i=0;i<7;i++){var w=document.createElement("div");w.className="week";w.textContent=nomes[i];ws.appendChild(w)}
+
+  var primeiro=new Date(dados.ano,dados.mes,1);
+  var ultimo=new Date(dados.ano,dados.mes+1,0);
+  document.getElementById("mes").textContent=primeiro.toLocaleDateString("pt-BR",{month:"long",year:"numeric"});
+
+  var c=document.getElementById("calendario");c.innerHTML="";
+  for(var e=0;e<primeiro.getDay();e++){var vazio=document.createElement("div");vazio.className="day vazio";c.appendChild(vazio)}
+
+  var hojeIso=iso(hoje), trabalhos=0,folgas=0;
+  for(var n=1;n<=ultimo.getDate();n++){
+    var d=new Date(dados.ano,dados.mes,n), s=status(d);
+    if(s==="T")trabalhos++;else folgas++;
+
+    var el=document.createElement("button");
+    el.type="button";
+    el.className="day "+(s==="T"?"w":"f")+(iso(d)===hojeIso?" hoje":"");
+    el.innerHTML="<b>"+n+"</b><small>"+(s==="T"?"TRABALHO":"FOLGA")+"</small>";
+
+    (function(data){
+      el.addEventListener("click",function(){
+        document.getElementById("data").value=iso(data);
+      },false);
+      el.addEventListener("touchend",function(ev){
+        ev.preventDefault();
+        document.getElementById("data").value=iso(data);
+      },false);
+    })(d);
+
+    c.appendChild(el);
+  }
+  document.getElementById("nt").textContent=trabalhos;
+  document.getElementById("nf").textContent=folgas;
+}
+
+function render(){
+  document.getElementById("data").value=dados.inicio;
+  document.getElementById("tipo").value=dados.tipo;
+  mostrarHoje();calendario();
+}
+
+var aplicarEmAndamento = false;
+
+function aplicarEscala(){
+  if(aplicarEmAndamento) return;
+  aplicarEmAndamento = true;
+
+  var campoData = document.getElementById("data");
+  var campoTipo = document.getElementById("tipo");
+  var d = campoData.value;
+
+  if(!d){
+    alert("Escolha uma data.");
+    aplicarEmAndamento = false;
+    return;
+  }
+
+  dados.inicio = d;
+  dados.tipo = campoTipo.value;
+
+  /* Uma nova aplicação começa uma nova referência.
+     A troca anterior é removida para evitar conflito. */
+  dados.troca = "";
+
+  salvar();
+  render();
+
+  setTimeout(function(){
+    aplicarEmAndamento = false;
+  }, 500);
+}
+
+document.getElementById("aplicar").addEventListener("click", aplicarEscala, false);
+
+/* Compatibilidade extra com Safari/iPhone */
+document.getElementById("aplicar").addEventListener("touchend", function(e){
+  e.preventDefault();
+  aplicarEscala();
+}, false);
+
+document.getElementById("trocar").onclick=function(){
+  var d=document.getElementById("data").value;
+  if(!d){alert("Escolha uma data.");return}
+  dados.troca=d;
+  salvar();render();
+};
+
+document.getElementById("limpar").onclick=function(){
+  dados={inicio:iso(hoje),tipo:"T",troca:"",ano:hoje.getFullYear(),mes:hoje.getMonth()};
+  salvar();render();
+};
+
+document.getElementById("anterior").onclick=function(){
+  dados.mes--;
+  if(dados.mes<0){dados.mes=11;dados.ano--}
+  salvar();render();
+};
+
+document.getElementById("proximo").onclick=function(){
+  dados.mes++;
+  if(dados.mes>11){dados.mes=0;dados.ano++}
+  salvar();render();
+};
+
+render();
+})();
+</script>
+</body>
+</html>
